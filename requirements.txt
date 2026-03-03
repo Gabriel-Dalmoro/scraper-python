@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+requests
+python-dotenv
+urllib3<2.0
+beautifulsoup4

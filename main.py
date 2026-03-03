@@ -78,9 +78,15 @@ def crawl_website(request: CrawlRequest):
         # Parse HTML
         soup = BeautifulSoup(html_content, "html.parser")
         
-        # Strip script, style, no-display elements loosely
-        for element in soup(["script", "style", "noscript", "meta"]):
+        # Strip script, style, and hidden elements
+        for element in soup(["script", "style", "noscript", "meta", "head", "title"]):
             element.extract()
+            
+        for hidden in soup.find_all(attrs={"style": re.compile(r"display:\s*none|visibility:\s*hidden", re.I)}):
+            hidden.extract()
+            
+        for hidden_input in soup.find_all("input", type="hidden"):
+            hidden_input.extract()
             
         # Extract text from body or whole document
         if soup.body:
@@ -92,6 +98,8 @@ def crawl_website(request: CrawlRequest):
         website_text = re.sub(r'\s+', ' ', raw_text).strip()
         
         # Regex to scan for first valid email address
+        # We also check the raw HTML content directly to find unrendered mailto links or hidden tags if needed.
+        # But generally, scanning html_content directly is completely fine for extracting an email address.
         email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', html_content)
         found_email = email_match.group(0) if email_match else None
         
