@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -29,37 +30,48 @@ def scrape_places(request: ScrapeRequest):
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": "places.displayName.text,places.formattedAddress,places.websiteUri,places.rating,places.userRatingCount"
+        "X-Goog-FieldMask": "places.displayName.text,places.formattedAddress,places.websiteUri,places.rating,places.userRatingCount,nextPageToken"
     }
     
-    payload = {
-        "textQuery": request.search_query
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-        data = response.json()
-    except requests.exceptions.HTTPError as e:
-        # If the API fails with a known HTTP error, extract Google's explanation JSON if possible
-        raise HTTPException(status_code=500, detail=f"Google Places API Error: {response.text}")
-    except requests.exceptions.RequestException as e:
-        # If the Google API fails on the network level
-        raise HTTPException(status_code=500, detail=f"Failed to communicate with Google Places API: {str(e)}")
-
-    places = data.get("places", [])
-    
-    # Filter out places that do not have a websiteUri
     filtered_places = []
-    for place in places:
-        if place.get("websiteUri"):
-            filtered_places.append({
-                "displayName": place.get("displayName", {}).get("text", ""),
-                "formattedAddress": place.get("formattedAddress", ""),
-                "websiteUri": place.get("websiteUri", ""),
-                "rating": place.get("rating"),
-                "userRatingCount": place.get("userRatingCount")
-            })
+    page_token = ""
+    
+    for _ in range(3):
+        payload = {
+            "textQuery": request.search_query
+        }
+        if page_token:
+            payload["pageToken"] = page_token
+            
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=15)
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            data = response.json()
+        except requests.exceptions.HTTPError as e:
+            # If the API fails with a known HTTP error, extract Google's explanation JSON if possible
+            raise HTTPException(status_code=500, detail=f"Google Places API Error: {response.text}")
+        except requests.exceptions.RequestException as e:
+            # If the Google API fails on the network level
+            raise HTTPException(status_code=500, detail=f"Failed to communicate with Google Places API: {str(e)}")
+
+        places = data.get("places", [])
+        
+        # Filter out places that do not have a websiteUri
+        for place in places:
+            if place.get("websiteUri"):
+                filtered_places.append({
+                    "displayName": place.get("displayName", {}).get("text", ""),
+                    "formattedAddress": place.get("formattedAddress", ""),
+                    "websiteUri": place.get("websiteUri", ""),
+                    "rating": place.get("rating"),
+                    "userRatingCount": place.get("userRatingCount")
+                })
+                
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+            
+        time.sleep(2)
 
     return filtered_places
 
