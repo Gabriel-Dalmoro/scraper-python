@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -109,15 +110,51 @@ def crawl_website(request: CrawlRequest):
         # Clean up excess whitespace
         website_text = re.sub(r'\s+', ' ', raw_text).strip()
         
-        # Regex to scan for first valid email address
-        # We also check the raw HTML content directly to find unrendered mailto links or hidden tags if needed.
-        # But generally, scanning html_content directly is completely fine for extracting an email address.
-        email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', html_content)
-        found_email = email_match.group(0) if email_match else None
+        # Regex to scan for all valid email addresses
+        all_emails = set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', html_content))
+        
+        # Blacklist junk domains and extensions
+        junk_domains = ["wixpress.com", "sentry.io", "example.com", "template.com"]
+        valid_emails = []
+        for email in all_emails:
+            lower_email = email.lower()
+            domain = lower_email.split('@')[-1]
+            if any(junk in domain for junk in junk_domains) or lower_email.endswith(".png"):
+                continue
+            valid_emails.append(lower_email)
+            
+        parsed_url = urlparse(url)
+        # Extract something close to company name from domain (e.g. from www.company.com -> company)
+        domain_parts = parsed_url.netloc.split('.')
+        # Avoid picking 'www' or 'co' if possible, but keeping it simple:
+        company_name = domain_parts[-2] if len(domain_parts) >= 2 else domain_parts[0]
+        company_name = company_name.lower()
+        if company_name in ["co", "com", "net", "org"] and len(domain_parts) >= 3:
+             company_name = domain_parts[-3].lower()
+        
+        best_email = None
+        if valid_emails:
+            # Priority 1: Contains company name
+            for email in valid_emails:
+                if company_name and company_name != "www" and company_name in email.split('@')[0]:
+                    best_email = email
+                    break
+            
+            # Priority 2: Standard business prefixes
+            if not best_email:
+                business_prefixes = ["info@", "contact@", "hello@", "admin@"]
+                for email in valid_emails:
+                    if any(email.startswith(prefix) for prefix in business_prefixes):
+                        best_email = email
+                        break
+                        
+            # Priority 3: Any other valid email
+            if not best_email:
+                best_email = valid_emails[0]
         
         return {
             "url": url,
-            "email": found_email,
+            "email": best_email,
             "website_text": website_text
         }
         
