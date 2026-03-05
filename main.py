@@ -31,7 +31,7 @@ def scrape_places(request: ScrapeRequest):
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": "places.displayName.text,places.formattedAddress,places.websiteUri,places.rating,places.userRatingCount,nextPageToken"
+        "X-Goog-FieldMask": "places.displayName.text,places.formattedAddress,places.websiteUri,places.rating,places.userRatingCount,nextPageToken,places.addressComponents"
     }
     
     filtered_places = []
@@ -60,8 +60,17 @@ def scrape_places(request: ScrapeRequest):
         # Filter out places that do not have a websiteUri
         for place in places:
             if place.get("websiteUri"):
+                city = ""
+                # Parse addressComponents to find the locality (city)
+                components = place.get("addressComponents", [])
+                for component in components:
+                    if "locality" in component.get("types", []):
+                        city = component.get("longText", "")
+                        break
+                        
                 filtered_places.append({
-                    "displayName": place.get("displayName", {}).get("text", ""),
+                    "business_name": place.get("displayName", {}).get("text", ""),
+                    "city": city,
                     "formattedAddress": place.get("formattedAddress", ""),
                     "websiteUri": place.get("websiteUri", ""),
                     "rating": place.get("rating"),
